@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+Resume_Output/
+test-output/
+.DS_Store
+Thumbs.db

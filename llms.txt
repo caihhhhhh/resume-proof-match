@@ -1,0 +1,17 @@
+# ResumeProof Match
+
+ResumeProof Match is an end-to-end, evidence-first Skill for AI agents.
+
+Primary entrypoint: SKILL.md
+Matching contract: references/matching.md
+Approval and delivery contract: references/delivery.md
+Deterministic CLI: scripts/resume_proof_match.py
+
+Core invariants:
+- Every fit conclusion maps a JD requirement to traceable evidence.
+- Role fit, evidence coverage, and document readiness remain separate.
+- Scores are not ATS pass probabilities.
+- Unsupported claims never enter a resume draft.
+- Complete text approval is required before formatted files.
+- QA is bound to approved text and output file hashes.
+- External application, upload, publication, messaging, and Desktop delivery require explicit authorization.
