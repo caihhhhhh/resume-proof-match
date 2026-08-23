@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "application": {
+    "company": "",
+    "role": "",
+    "language": "en",
+    "created_at": ""
+  },
+  "status": "draft",
+  "files": {
+    "jd_analysis": "jd-analysis.json",
+    "evidence_ledger": "evidence-ledger.json",
+    "match_report": "match-report.json",
+    "text_review": "text-review.md"
+  },
+  "approval": null,
+  "qa": {
+    "text": "pending",
+    "facts": "pending",
+    "pagination": "pending",
+    "visual": "pending",
+    "binding": null
+  },
+  "delivery": null
+}
