@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "job": {
+    "company": "Example Co",
+    "role": "Campaign Analyst",
+    "language": "en"
+  },
+  "requirements": [
+    {
+      "id": "req-001",
+      "type": "must-have",
+      "category": "experience",
+      "importance": 5,
+      "statement": "Analyze live campaign performance",
+      "source_text": "Analyze campaign performance and identify trends."
+    },
+    {
+      "id": "req-002",
+      "type": "nice-to-have",
+      "category": "skill",
+      "importance": 3,
+      "statement": "Use SQL for data queries",
+      "source_text": "SQL or data querying knowledge."
+    }
+  ]
+}

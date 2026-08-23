@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "claims": [
+    {
+      "id": "claim-001",
+      "statement": "Reviewed campaign results and changed the next test based on performance.",
+      "source": "sample-resume.md, Campaign Experience",
+      "status": "confirmed",
+      "caveat": null
+    },
+    {
+      "id": "claim-002",
+      "statement": "Used data queries during analysis.",
+      "source": "candidate clarification required",
+      "status": "needs-confirmation",
+      "caveat": "The query language and depth are not confirmed."
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "matches": [
+    {
+      "requirement_id": "req-001",
+      "status": "supported",
+      "claim_ids": [
+        "claim-001"
+      ],
+      "confidence": "high",
+      "explanation": "The source describes direct campaign analysis and iteration."
+    },
+    {
+      "requirement_id": "req-002",
+      "status": "needs-confirmation",
+      "claim_ids": [
+        "claim-002"
+      ],
+      "confidence": "low",
+      "explanation": "Query experience is plausible but the specific tool is not confirmed."
+    }
+  ],
+  "document_readiness": {
+    "structure": 80,
+    "clarity": 75,
+    "keyword_expression": 65,
+    "extractability": 90
+  },
+  "scores": null,
+  "quick_wins": [
+    {
+      "requirement_id": "req-001",
+      "action": "Move the confirmed campaign-analysis result into the first experience bullet."
+    }
+  ],
+  "disclaimer": "Decision aid only; not an ATS pass probability."
+}
