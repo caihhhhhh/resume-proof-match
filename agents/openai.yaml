@@ -1,0 +1,4 @@
+interface:
+  display_name: "ResumeProof Match"
+  short_description: "Explainable JD matching and verified resume delivery"
+  default_prompt: "Use $resume-proof-match to compare my resume with this JD, trace the evidence, propose truthful edits, and wait for my full-text approval before generating files."
