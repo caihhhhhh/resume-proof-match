@@ -34,6 +34,8 @@ Want to use the workflow without installing a Skill first?
 
 The web app lets you upload or paste both sources, review the extracted text, inspect requirement-level evidence, accept or edit suggestions, approve the full draft, and export HTML, PDF, or DOCX. You can also [load the complete example](https://resumeproof.szw19990924.chatgpt.site/match/new?demo=1&utm_source=github&utm_medium=referral&utm_campaign=skill_repo_202609) without uploading a file.
 
+To understand the method before using the tool, read the [evidence-first resume matching guide](https://resumeproof.szw19990924.chatgpt.site/en/guide?utm_source=github&utm_medium=referral&utm_campaign=skill_repo_202609).
+
 This repository is the AI-agent Skill and deterministic workflow. The interactive website is maintained separately in the [web app source repository](https://github.com/caihhhhhh/resumeproof-match-web).
 
 ## What makes it different

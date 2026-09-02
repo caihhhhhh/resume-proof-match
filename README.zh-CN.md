@@ -34,6 +34,8 @@ ResumeProof Match 是一个面向 AI Agent 的端到端 Skill，把“简历与 
 
 网页版可以上传或粘贴简历与 JD，审核识别文字，查看每项要求对应的简历证据，采用或修改建议，确认完整文字稿，再导出 HTML、PDF 或 DOCX。如果只想先看效果，可以[直接加载完整示例](https://resumeproof.szw19990924.chatgpt.site/match/new?demo=1&utm_source=github&utm_medium=referral&utm_campaign=skill_repo_202609)，不需要上传文件。
 
+如果想先了解判断逻辑，可以阅读[证据优先的简历与 JD 匹配方法](https://resumeproof.szw19990924.chatgpt.site/guide?utm_source=github&utm_medium=referral&utm_campaign=skill_repo_202609)。
+
 当前仓库是面向 AI Agent 的 Skill 与确定性工作流；互动网站的源码单独维护在 [Web App 仓库](https://github.com/caihhhhhh/resumeproof-match-web)。
 
 ## 核心特点
