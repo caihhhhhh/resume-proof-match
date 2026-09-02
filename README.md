@@ -1,5 +1,7 @@
 <p align="center">
-  <img src="docs/images/hero.png" alt="ResumeProof Match: evidence-first resume matching and delivery" width="100%" />
+  <a href="https://resumeproof.szw19990924.chatgpt.site/match/new?utm_source=github&amp;utm_medium=referral&amp;utm_campaign=skill_repo_202609">
+    <img src="docs/images/hero.png" alt="ResumeProof Match: evidence-first resume matching and delivery" width="100%" />
+  </a>
 </p>
 
 <p align="center">
@@ -7,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://resumeproof.szw19990924.chatgpt.site/match/new?utm_source=github&amp;utm_medium=referral&amp;utm_campaign=skill_repo_202609"><strong>Try the live web app →</strong></a> ·
   <a href="README.zh-CN.md">中文</a> ·
   <a href="#install">Install</a> ·
   <a href="#how-it-works">How it works</a>
@@ -22,6 +25,16 @@ It answers two connected questions:
 2. How do we turn the supported evidence into a tailored resume without inventing anything?
 
 Most matching tools stop at a score. Most resume generators start writing before the facts are settled. ResumeProof Match keeps both stages in one auditable workflow.
+
+## Try it in the browser
+
+Want to use the workflow without installing a Skill first?
+
+**[Match a resume to a JD on ResumeProof Match →](https://resumeproof.szw19990924.chatgpt.site/match/new?utm_source=github&utm_medium=referral&utm_campaign=skill_repo_202609)**
+
+The web app lets you upload or paste both sources, review the extracted text, inspect requirement-level evidence, accept or edit suggestions, approve the full draft, and export HTML, PDF, or DOCX. You can also [load the complete example](https://resumeproof.szw19990924.chatgpt.site/match/new?demo=1&utm_source=github&utm_medium=referral&utm_campaign=skill_repo_202609) without uploading a file.
+
+This repository is the AI-agent Skill and deterministic workflow. The interactive website is maintained separately in the [web app source repository](https://github.com/caihhhhhh/resumeproof-match-web).
 
 ## What makes it different
 

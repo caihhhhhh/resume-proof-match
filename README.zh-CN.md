@@ -1,5 +1,7 @@
 <p align="center">
-  <img src="docs/images/hero.png" alt="ResumeProof Match：证据优先的简历匹配与交付工作流" width="100%" />
+  <a href="https://resumeproof.szw19990924.chatgpt.site/match/new?utm_source=github&amp;utm_medium=referral&amp;utm_campaign=skill_repo_202609">
+    <img src="docs/images/hero.png" alt="ResumeProof Match：证据优先的简历匹配与交付工作流" width="100%" />
+  </a>
 </p>
 
 <p align="center">
@@ -7,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://resumeproof.szw19990924.chatgpt.site/match/new?utm_source=github&amp;utm_medium=referral&amp;utm_campaign=skill_repo_202609"><strong>在线体验 →</strong></a> ·
   <a href="README.md">English</a> ·
   <a href="#安装">安装</a> ·
   <a href="#完整流程">完整流程</a>
@@ -22,6 +25,16 @@ ResumeProof Match 是一个面向 AI Agent 的端到端 Skill，把“简历与 
 2. 如何把已有证据写成针对性简历，同时不编造、不夸大？
 
 很多匹配工具给完分数就结束，很多简历工具在事实尚未确认时就开始生成。ResumeProof Match 用同一条可审计的证据链连接两者。
+
+## 先在网页中试用
+
+不想先安装 Skill，也可以直接使用网页版：
+
+**[打开 ResumeProof Match，匹配简历与 JD →](https://resumeproof.szw19990924.chatgpt.site/match/new?utm_source=github&utm_medium=referral&utm_campaign=skill_repo_202609)**
+
+网页版可以上传或粘贴简历与 JD，审核识别文字，查看每项要求对应的简历证据，采用或修改建议，确认完整文字稿，再导出 HTML、PDF 或 DOCX。如果只想先看效果，可以[直接加载完整示例](https://resumeproof.szw19990924.chatgpt.site/match/new?demo=1&utm_source=github&utm_medium=referral&utm_campaign=skill_repo_202609)，不需要上传文件。
+
+当前仓库是面向 AI Agent 的 Skill 与确定性工作流；互动网站的源码单独维护在 [Web App 仓库](https://github.com/caihhhhhh/resumeproof-match-web)。
 
 ## 核心特点
 
