@@ -9,6 +9,14 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/caihhhhhh/resume-proof-match/actions/workflows/ci.yml"><img src="https://github.com/caihhhhhh/resume-proof-match/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://developers.openai.com/codex"><img src="https://img.shields.io/badge/Codex-Agent_Skill-111827?style=flat-square" alt="Codex Skill" /></a>
+  <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude_Code-Compatible-D97757?style=flat-square" alt="Claude Code" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-10B981?style=flat-square" alt="License: MIT" /></a>
+</p>
+
+<p align="center">
   <a href="https://resumeproof.szw19990924.chatgpt.site/match/new?utm_source=github&amp;utm_medium=referral&amp;utm_campaign=skill_repo_202609"><strong>在线体验 →</strong></a> ·
   <a href="README.md">English</a> ·
   <a href="#安装">安装</a> ·
@@ -87,6 +95,14 @@ python scripts/resume_proof_match.py new \
   --language zh
 
 python scripts/resume_proof_match.py score Resume_Output/Applications/<目录> --write
+python scripts/resume_proof_match.py keywords Resume_Output/Applications/<目录> --resume resume.pdf
+python scripts/resume_proof_match.py compare Resume_Output/Applications/<目录甲> Resume_Output/Applications/<目录乙>
+python scripts/resume_proof_match.py cover-approve Resume_Output/Applications/<目录>
+python scripts/resume_proof_match.py cover-qa Resume_Output/Applications/<目录> --file cover-letter.pdf --text passed --facts passed
+python scripts/resume_proof_match.py export Resume_Output/Applications/<目录> --output app.zip
+python scripts/resume_proof_match.py interview Resume_Output/Applications/<目录> --output interview-prep.md
+python scripts/resume_proof_match.py status Resume_Output/Applications/<目录>
+python scripts/resume_proof_match.py outcome Resume_Output/Applications/<目录> --status applied
 python scripts/resume_proof_match.py approve Resume_Output/Applications/<目录>
 python scripts/resume_proof_match.py inspect resume.pdf --max-pages 2
 python scripts/resume_proof_match.py qa Resume_Output/Applications/<目录> \
@@ -112,6 +128,35 @@ python scripts/resume_proof_match.py safety .
 \`\`\`
 
 该 Skill 不会自行投递岗位、上传文件、发布内容、发送邮件或把文件复制到桌面；这些动作都需要用户单独明确授权。
+
+## 常见问题
+
+### 这是 ATS 评分工具吗？
+
+不是。ResumeProof Match 只检查可验证的客观属性——文字可提取、页数限制、关键词、
+结构可读性——并输出三个独立的决策参考信号。它永远不会把分数包装成 ATS 通过率。
+
+### 和免费版 `resume-proof` 有什么区别？
+
+[`resume-proof`](https://github.com/caihhhhhh/resume-proof) 是免费的治理层：
+事实溯源、批准门禁、QA 验收。这个 Match 版是完整端到端工作流——JD 要求拆解、
+可解释的匹配打分、在线网页 demo——全部在一条可审计的链路上。
+
+### 它会替我写简历吗？
+
+兼容的 AI Agent 负责分析和写作，Skill 负责治理：每句话都绑定提供的证据，
+完整文字稿未经你明确批准，排版文件一步都不能往前走。
+
+### 支持中文简历吗？
+
+支持。工作区可指定目标语言（`en` / `zh` / `bilingual`），工作流会按目标语言
+自然重写，而不是逐句翻译。关键词检查同样支持中文（基于最长公共短语匹配，
+不需要分词器）。
+
+### 我的数据会去哪里？
+
+哪里也不去。CLI 只用 Python 标准库在本地运行——无账号、无数据库、无网络请求。
+填充了真实信息的工作区请放在公开仓库之外。
 
 ## 本地验证
 

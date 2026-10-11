@@ -9,6 +9,14 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/caihhhhhh/resume-proof-match/actions/workflows/ci.yml"><img src="https://github.com/caihhhhhh/resume-proof-match/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://developers.openai.com/codex"><img src="https://img.shields.io/badge/Codex-Agent_Skill-111827?style=flat-square" alt="Codex Skill" /></a>
+  <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude_Code-Compatible-D97757?style=flat-square" alt="Claude Code" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-10B981?style=flat-square" alt="License: MIT" /></a>
+</p>
+
+<p align="center">
   <a href="https://resumeproof.szw19990924.chatgpt.site/match/new?utm_source=github&amp;utm_medium=referral&amp;utm_campaign=skill_repo_202609"><strong>Try the live web app →</strong></a> ·
   <a href="README.zh-CN.md">中文</a> ·
   <a href="#install">Install</a> ·
@@ -87,6 +95,14 @@ python scripts/resume_proof_match.py new \
   --language en
 
 python scripts/resume_proof_match.py score Resume_Output/Applications/<folder> --write
+python scripts/resume_proof_match.py keywords Resume_Output/Applications/<folder> --resume resume.pdf
+python scripts/resume_proof_match.py compare Resume_Output/Applications/<folder-a> Resume_Output/Applications/<folder-b>
+python scripts/resume_proof_match.py cover-approve Resume_Output/Applications/<folder>
+python scripts/resume_proof_match.py cover-qa Resume_Output/Applications/<folder> --file cover-letter.pdf --text passed --facts passed
+python scripts/resume_proof_match.py export Resume_Output/Applications/<folder> --output app.zip
+python scripts/resume_proof_match.py interview Resume_Output/Applications/<folder> --output interview-prep.md
+python scripts/resume_proof_match.py status Resume_Output/Applications/<folder>
+python scripts/resume_proof_match.py outcome Resume_Output/Applications/<folder> --status applied
 python scripts/resume_proof_match.py approve Resume_Output/Applications/<folder>
 python scripts/resume_proof_match.py inspect resume.pdf --max-pages 2
 python scripts/resume_proof_match.py qa Resume_Output/Applications/<folder> \
@@ -112,10 +128,13 @@ resume-proof-match/
 ├── scripts/resume_proof_match.py
 ├── references/
 │   ├── matching.md
-│   └── delivery.md
+│   ├── delivery.md
+│   └── workspace-exchange.md
 ├── examples/sample-application/
 ├── tests/
-└── .github/workflows/ci.yml
+├── .github/workflows/ci.yml
+├── CHANGELOG.md
+└── AGENSI_LISTING.md
 \`\`\`
 
 ## Privacy and safety
@@ -127,6 +146,38 @@ python scripts/resume_proof_match.py safety .
 \`\`\`
 
 ResumeProof Match never authorizes applying, uploading, publishing, emailing, or copying files to Desktop. Those remain explicit user actions.
+
+## Frequently asked questions
+
+### Is this an ATS scoring tool?
+
+No. ResumeProof Match checks practical, verifiable properties — extractable text,
+page limits, required terms, readable structure — and reports three separate
+decision-aid signals. It never presents a score as an ATS pass probability.
+
+### How is this different from the free `resume-proof` skill?
+
+[`resume-proof`](https://github.com/caihhhhhh/resume-proof) is the free,
+governance-only layer: claim tracing, approval gates, and QA around resume work.
+This Match edition adds the full end-to-end workflow — JD requirement extraction,
+explainable fit scoring, and a live web demo — in one auditable pipeline.
+
+### Does it write the resume for me?
+
+A compatible AI agent does the analysis and writing; the skill governs it. Every
+claim stays tied to supplied evidence, and formatted files are blocked until you
+approve the complete text draft.
+
+### Does it handle Chinese resumes?
+
+Yes. Workspaces accept a target language (`en`, `zh`, or `bilingual`), and the
+workflow rewrites naturally for the target language instead of translating line
+by line.
+
+### Where does my data go?
+
+Nowhere. The CLI runs locally with the Python standard library — no accounts, no
+database, no network calls. Keep populated workspaces outside the public repository.
 
 ## Development
 

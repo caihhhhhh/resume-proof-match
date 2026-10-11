@@ -11,6 +11,8 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import zipfile
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +22,30 @@ ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "assets" / "manifest-template.json"
 QA_KEYS = ("text", "facts", "pagination", "visual")
 QA_STATES = ("pending", "passed", "failed")
+# Markers that indicate a text review reads as a complete resume (bilingual).
+RESUME_SECTION_MARKERS = (
+    "experience", "education", "skills", "summary", "employment",
+    "work history", "projects", "certifications",
+    "工作经历", "教育背景", "技能", "个人简介", "求职意向", "项目经历",
+)
+MIN_REVIEW_CHARS = 400
+COVER_QA_KEYS = ("text", "facts")
+COVER_MIN_CHARS = 300
+COVER_GREETINGS = ("hi ", "hi,", "dear ", "hello ", "您好", "你好")
+COVER_CLOSINGS = (
+    "best regards", "kind regards", "sincerely", "best,", "regards,",
+    "此致", "顺颂", "谢谢",
+)
+WORKSPACE_FORMAT = "resume-proof-match-workspace"
+WORKSPACE_FORMAT_VERSION = 1
+KEYWORD_DISCLAIMER = "Keyword coverage only; not an ATS pass probability."
+KEYWORD_STOPWORDS = frozenset(
+    """
+    a an and are as at be by for from has have in is it its of on or that the to was were will with you your
+    的 和 与 在 对 为 等 及 或 将 被 把 由 这 那 个 一 不 也 都
+    """.split()
+)
+TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]+")
 POSITIVE_TYPES = ("must-have", "nice-to-have")
 REQUIREMENT_TYPES = POSITIVE_TYPES + ("must-not",)
 MATCH_STATES = ("supported", "needs-confirmation", "unsupported", "conflict", "not-applicable")
@@ -121,6 +147,10 @@ def command_new(args: argparse.Namespace) -> int:
         "# Text review draft\n\nStatus: awaiting complete review and explicit approval.\n",
         encoding="utf-8",
     )
+    (application_dir / "cover-letter.md").write_text(
+        "# Cover letter draft\n\nStatus: awaiting complete draft and explicit approval.\n",
+        encoding="utf-8",
+    )
     print(application_dir)
     return 0
 
@@ -202,6 +232,9 @@ def validate_matching(application_dir: Path) -> tuple[dict, dict, dict, list[str
         status = match.get("status")
         if status not in MATCH_STATES:
             errors.append(f"{label}.status must be one of {', '.join(MATCH_STATES)}")
+        confidence = match.get("confidence")
+        if confidence is not None and confidence not in ("high", "medium", "low"):
+            errors.append(f"{label}.confidence must be one of high, medium, low")
         claim_ids = match.get("claim_ids")
         if not isinstance(claim_ids, list) or any(not isinstance(item, str) for item in claim_ids):
             errors.append(f"{label}.claim_ids must be a list of strings")
@@ -332,8 +365,17 @@ def command_approve(args: argparse.Namespace) -> int:
     if not review.is_file():
         raise RuntimeError(f"Text review not found: {review}")
     text = review.read_text(encoding="utf-8").strip()
-    if len(text) < 120 or "awaiting complete review" in text.casefold():
-        raise RuntimeError("Text review is incomplete; replace the placeholder with the complete resume.")
+    lowered = text.casefold()
+    has_section = any(marker in lowered for marker in RESUME_SECTION_MARKERS)
+    if (
+        len(text) < MIN_REVIEW_CHARS
+        or "awaiting complete review" in lowered
+        or not has_section
+    ):
+        raise RuntimeError(
+            "Text review is incomplete; replace the placeholder with the complete resume "
+            f"(at least {MIN_REVIEW_CHARS} characters and a recognizable resume section)."
+        )
     manifest["status"] = "approved"
     manifest["approval"] = {
         "approved_at": utc_now(),
@@ -404,25 +446,39 @@ def extract_text(path: Path) -> tuple[str, int | None]:
     return text, None
 
 
-def command_inspect(args: argparse.Namespace) -> int:
-    path = args.file.resolve()
-    if not path.is_file():
-        raise RuntimeError(f"File not found: {path}")
+def inspect_file(
+    path: Path,
+    required: list[str],
+    forbid: list[str],
+    max_pages: int | None,
+    case_sensitive: bool,
+) -> tuple[str, int | None, list[str]]:
+    """Shared text/pagination check. Returns (text, pages, failures)."""
     text, pages = extract_text(path)
-    haystack = text if args.case_sensitive else text.casefold()
+    haystack = text if case_sensitive else text.casefold()
     failures: list[str] = []
-    for value in args.required:
-        needle = value if args.case_sensitive else value.casefold()
+    for value in required:
+        needle = value if case_sensitive else value.casefold()
         if needle not in haystack:
             failures.append(f"missing required text: {value}")
-    for value in args.forbid:
-        needle = value if args.case_sensitive else value.casefold()
+    for value in forbid:
+        needle = value if case_sensitive else value.casefold()
         if needle in haystack:
             failures.append(f"found forbidden text: {value}")
     if not text.strip():
         failures.append("no extractable text")
-    if pages is not None and pages > args.max_pages:
-        failures.append(f"page count {pages} exceeds limit {args.max_pages}")
+    if max_pages is not None and pages is not None and pages > max_pages:
+        failures.append(f"page count {pages} exceeds limit {max_pages}")
+    return text, pages, failures
+
+
+def command_inspect(args: argparse.Namespace) -> int:
+    path = args.file.resolve()
+    if not path.is_file():
+        raise RuntimeError(f"File not found: {path}")
+    text, pages, failures = inspect_file(
+        path, args.required, args.forbid, args.max_pages, args.case_sensitive
+    )
     print(f"file: {path}")
     print(f"characters: {len(text.strip())}")
     print(f"pages: {pages if pages is not None else 'not checked'}")
@@ -441,6 +497,27 @@ def command_qa(args: argparse.Namespace) -> int:
         raise RuntimeError("Approve the complete text before recording QA.")
     _, approved_hash = verify_approval(application_dir, manifest)
 
+    paths = [path.resolve() for path in args.file]
+    if any(not path.is_file() for path in paths):
+        raise RuntimeError("Every --file value must be an existing file.")
+    if getattr(args, "from_inspect", False):
+        for path in paths:
+            _, pages, failures = inspect_file(
+                path,
+                getattr(args, "required", []),
+                getattr(args, "forbid", []),
+                getattr(args, "max_pages", None),
+                getattr(args, "case_sensitive", False),
+            )
+            if failures:
+                raise RuntimeError(
+                    f"from-inspect failed for {path.name}: {'; '.join(failures)}"
+                )
+            if args.text is None:
+                args.text = "passed"
+            if args.pagination is None and pages is not None:
+                args.pagination = "passed"
+
     changed = False
     for key in QA_KEYS:
         value = getattr(args, key)
@@ -449,9 +526,6 @@ def command_qa(args: argparse.Namespace) -> int:
             changed = True
     if not changed:
         raise RuntimeError("Provide at least one QA result.")
-    paths = [path.resolve() for path in args.file]
-    if any(not path.is_file() for path in paths):
-        raise RuntimeError("Every --file value must be an existing file.")
     manifest["qa"]["binding"] = {
         "approved_text_sha256": approved_hash,
         "files": output_hashes(paths),
@@ -466,28 +540,43 @@ def command_qa(args: argparse.Namespace) -> int:
 
 def command_deliver(args: argparse.Namespace) -> int:
     application_dir = args.application_dir.resolve()
-    manifest = load_manifest(application_dir)
-    if manifest.get("status") != "qa-passed":
-        raise RuntimeError("Delivery blocked: complete text approval and all QA checks are required.")
+    manifest = ensure_cover_track(load_manifest(application_dir))
     _, _, _, matching_errors = validate_matching(application_dir)
     if matching_errors:
         raise RuntimeError("Delivery blocked: matching data is invalid.")
-    try:
-        _, approved_hash = verify_approval(application_dir, manifest)
-    except RuntimeError as exc:
-        raise RuntimeError(f"Delivery blocked: {exc}") from exc
 
     files = [path.resolve() for path in args.file]
     if not files:
         raise RuntimeError("Provide delivery files with --file.")
     if any(not path.is_file() for path in files):
         raise RuntimeError("Delivery blocked: a requested file is missing.")
-    binding = manifest.get("qa", {}).get("binding") or {}
-    bound_hashes = binding.get("files") or {}
-    if binding.get("approved_text_sha256") != approved_hash:
-        raise RuntimeError("Delivery blocked: QA is stale for the approved text.")
-    if any(bound_hashes.get(str(path)) != sha256(path) for path in files):
-        raise RuntimeError("Delivery blocked: an output file changed after QA.")
+
+    resume_binding = (manifest.get("qa") or {}).get("binding") or {}
+    cover_binding = (manifest.get("cover_qa") or {}).get("binding") or {}
+    resume_files = resume_binding.get("files") or {}
+    cover_files = cover_binding.get("files") or {}
+    for path in files:
+        key = str(path)
+        if key in resume_files:
+            try:
+                _, approved_hash = verify_approval(application_dir, manifest)
+            except RuntimeError as exc:
+                raise RuntimeError(f"Delivery blocked: {exc}") from exc
+            if resume_binding.get("approved_text_sha256") != approved_hash:
+                raise RuntimeError("Delivery blocked: resume QA is stale for the approved text.")
+            if resume_files[key] != sha256(path):
+                raise RuntimeError("Delivery blocked: an output file changed after QA.")
+        elif key in cover_files:
+            try:
+                _, cover_hash = verify_cover_approval(application_dir, manifest)
+            except RuntimeError as exc:
+                raise RuntimeError(f"Delivery blocked: {exc}") from exc
+            if cover_binding.get("approved_text_sha256") != cover_hash:
+                raise RuntimeError("Delivery blocked: cover letter QA is stale for the approved text.")
+            if cover_files[key] != sha256(path):
+                raise RuntimeError("Delivery blocked: an output file changed after QA.")
+        else:
+            raise RuntimeError(f"Delivery blocked: file has no QA binding: {path.name}")
 
     delivery_dir = args.delivery_dir.resolve()
     destinations = [delivery_dir / source.name for source in files]
@@ -522,6 +611,552 @@ def command_deliver(args: argparse.Namespace) -> int:
     }
     write_json(manifest_path(application_dir), manifest)
     print(json.dumps(manifest["delivery"], indent=2))
+    return 0
+
+
+def alpha_terms(text: str, min_length: int) -> list[str]:
+    terms = []
+    for token in TOKEN_RE.findall(text):
+        if not re.fullmatch(r"[A-Za-z0-9_]+", token):
+            continue
+        term = token.casefold()
+        if len(term) >= min_length and term not in KEYWORD_STOPWORDS:
+            terms.append(term)
+    return terms
+
+
+def longest_common_phrases(jd_run: str, haystack: str, max_size: int = 8) -> tuple[list[str], list[str]]:
+    """Greedy longest-first common substrings (>=2 chars) between a JD CJK run and
+    the resume. No word segmenter needed. Returns (present phrases, uncovered phrases)."""
+    work = jd_run
+    present: list[str] = []
+    for size in range(min(len(work), max_size), 1, -1):
+        i = 0
+        while i + size <= len(work):
+            chunk = work[i : i + size]
+            if "\ufffd" not in chunk and chunk in haystack:
+                present.append(chunk)
+                work = work[:i] + "\ufffd" * size + work[i + size :]
+                i += size
+            else:
+                i += 1
+    uncovered = re.findall(r"[\u4e00-\u9fff]{2,}", work)
+    return present, uncovered
+
+
+def collect_keywords(jd: dict, haystack: str, min_length: int) -> list[dict]:
+    """Deterministic JD keyword candidates. English: tokens minus stopwords.
+    Chinese: longest common phrases with the resume (present) plus the JD phrases
+    the resume does not cover (uncovered) — no segmenter required."""
+    terms: dict[str, dict] = {}
+
+    def register(term: str, requirement_id: str | None) -> None:
+        entry = terms.setdefault(term, {"term": term, "requirement_ids": []})
+        if requirement_id and requirement_id not in entry["requirement_ids"]:
+            entry["requirement_ids"].append(requirement_id)
+
+    for requirement in jd.get("requirements", []):
+        if not isinstance(requirement, dict):
+            continue
+        requirement_id = requirement.get("id")
+        source = f"{requirement.get('statement', '')} {requirement.get('source_text', '')}"
+        for term in alpha_terms(source, min_length):
+            register(term, requirement_id)
+        for run in re.findall(r"[\u4e00-\u9fff]{2,}", source):
+            present, uncovered = longest_common_phrases(run, haystack)
+            for phrase in present + uncovered:
+                register(phrase, requirement_id)
+    for term, entry in terms.items():
+        if re.fullmatch(r"[a-z0-9_]+", term):
+            entry["present"] = (
+                re.search(r"(?<![a-z0-9_])" + re.escape(term) + r"(?![a-z0-9_])", haystack)
+                is not None
+            )
+        else:
+            entry["present"] = term in haystack
+    return sorted(terms.values(), key=lambda item: item["term"])
+
+
+def command_keywords(args: argparse.Namespace) -> int:
+    application_dir = args.application_dir.resolve()
+    manifest = load_manifest(application_dir)
+    jd = read_json(workspace_file(application_dir, manifest, "jd_analysis"))
+    if not jd.get("requirements"):
+        raise RuntimeError("jd-analysis.json needs at least one requirement")
+    if args.resume:
+        resume_path = Path(args.resume).resolve()
+    else:
+        resume_path = workspace_file(application_dir, manifest, "text_review")
+    if not resume_path.is_file():
+        raise RuntimeError(f"Resume file not found: {resume_path}")
+    text, _ = extract_text(resume_path)
+    haystack = text.casefold()
+    if not haystack.strip():
+        raise RuntimeError("Resume file has no extractable text")
+
+    keywords = collect_keywords(jd, haystack, args.min_length)
+    present = [keyword for keyword in keywords if keyword["present"]]
+    missing = [keyword for keyword in keywords if not keyword["present"]]
+    by_requirement: dict[str, dict[str, list[str]]] = {}
+    for keyword in keywords:
+        for requirement_id in keyword["requirement_ids"]:
+            bucket = by_requirement.setdefault(requirement_id, {"present": [], "missing": []})
+            bucket["present" if keyword["present"] else "missing"].append(keyword["term"])
+    result = {
+        "resume": str(resume_path),
+        "keywords_total": len(keywords),
+        "keywords_present": [item["term"] for item in present],
+        "keywords_missing": [item["term"] for item in missing],
+        "coverage": round(len(present) / len(keywords), 3) if keywords else 0.0,
+        "by_requirement": by_requirement,
+        "disclaimer": KEYWORD_DISCLAIMER,
+    }
+    if args.write:
+        report_path = workspace_file(application_dir, manifest, "match_report")
+        report = read_json(report_path)
+        report["keyword_coverage"] = result
+        write_json(report_path, report)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+RECOMMENDATION_RANK = {"apply": 0, "consider": 1, "low priority": 2}
+COMPARE_DISCLAIMER = "Ranking is a decision aid only; not an ATS pass probability."
+
+
+def summarize_application(application_dir: Path) -> dict:
+    summary: dict = {"application_dir": str(application_dir), "slug": application_dir.name}
+    try:
+        manifest = load_manifest(application_dir)
+    except RuntimeError as exc:
+        summary.update(ok=False, errors=[str(exc)])
+        return summary
+    jd, ledger, report, errors = validate_matching(application_dir)
+    application = manifest.get("application") or {}
+    summary.update(
+        company=application.get("company"),
+        role=application.get("role"),
+        status=manifest.get("status"),
+        ok=not errors,
+        errors=errors,
+    )
+    if errors:
+        return summary
+    scores = calculate_scores(jd, ledger, report)
+    keyword_coverage = report.get("keyword_coverage") or {}
+    summary.update(
+        role_fit=scores["role_fit"],
+        evidence_coverage=scores["evidence_coverage"],
+        document_readiness=scores["document_readiness"],
+        band=scores["band"],
+        recommendation=scores["recommendation"],
+        must_have_gaps=scores["unsupported_must_have"],
+        conflicts=scores["conflicts"],
+        keyword_coverage=keyword_coverage.get("coverage"),
+        outcome=(manifest.get("outcome") or {}).get("status"),
+    )
+    return summary
+
+
+def render_compare_table(ranked: list[dict], invalid: list[dict]) -> str:
+    lines = [
+        f"{'Rank':<4} {'Application':<28} {'Fit':>3} {'Evid':>4} {'Doc':>3} "
+        f"{'Band':<7} {'Recommendation':<12} {'Gaps':>4} {'Flags':<8} {'Outcome':<9} {'Status':<9}",
+        "-" * 106,
+    ]
+    for rank, summary in enumerate(ranked, 1):
+        flags = "conflict" if summary["conflicts"] else ""
+        lines.append(
+            f"{rank:<4} {summary['slug'][:28]:<28} {summary['role_fit']:>3} "
+            f"{summary['evidence_coverage']:>4} {summary['document_readiness']:>3} "
+            f"{summary['band']:<7} {summary['recommendation']:<12} "
+            f"{len(summary['must_have_gaps']):>4} {flags:<8} "
+            f"{summary.get('outcome') or '-':<9} {summary['status'] or '-':<9}"
+        )
+    for summary in invalid:
+        lines.append(
+            f"{'-':<4} {summary['slug'][:28]:<28} {'invalid: ' + '; '.join(summary['errors'])[:58]}"
+        )
+    return "\n".join(lines)
+
+
+def command_compare(args: argparse.Namespace) -> int:
+    raw = [Path(item).resolve() for item in args.application_dirs]
+    if len(raw) < 2:
+        raise RuntimeError("compare needs at least two application directories")
+    if len({str(path) for path in raw}) != len(raw):
+        raise RuntimeError("compare needs distinct application directories")
+    summaries = [summarize_application(path) for path in raw]
+    ranked = sorted(
+        (item for item in summaries if item["ok"]),
+        key=lambda item: (
+            RECOMMENDATION_RANK[item["recommendation"]],
+            -item["role_fit"],
+            -item["evidence_coverage"],
+        ),
+    )
+    invalid = [item for item in summaries if not item["ok"]]
+    result = {
+        "ranking": [item["slug"] for item in ranked],
+        "applications": summaries,
+        "disclaimer": COMPARE_DISCLAIMER,
+    }
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if args.format == "json":
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(render_compare_table(ranked, invalid))
+        print(f"\n{COMPARE_DISCLAIMER}")
+    return 0
+
+
+def ensure_cover_track(manifest: dict) -> dict:
+    """Fill cover-letter track defaults for manifests created before it existed."""
+    manifest.setdefault("files", {}).setdefault("cover_letter", "cover-letter.md")
+    manifest.setdefault("cover_approval", None)
+    cover_qa = manifest.setdefault("cover_qa", {})
+    cover_qa.setdefault("text", "pending")
+    cover_qa.setdefault("facts", "pending")
+    cover_qa.setdefault("binding", None)
+    manifest.setdefault("cover_status", "draft")
+    return manifest
+
+
+def verify_cover_approval(application_dir: Path, manifest: dict) -> tuple[Path, str]:
+    cover_path = application_dir / manifest["files"]["cover_letter"]
+    approval = manifest.get("cover_approval") or {}
+    approved_hash = approval.get("approved_text_sha256")
+    if not cover_path.is_file() or sha256(cover_path) != approved_hash:
+        raise RuntimeError("Approved cover letter changed; obtain approval again.")
+    if approval.get("matching_sha256") != matching_hashes(application_dir, manifest):
+        raise RuntimeError("Matching evidence changed; review the cover letter and approve again.")
+    return cover_path, approved_hash
+
+
+def command_cover_approve(args: argparse.Namespace) -> int:
+    application_dir = args.application_dir.resolve()
+    manifest = ensure_cover_track(load_manifest(application_dir))
+    _, _, _, errors = validate_matching(application_dir)
+    if errors:
+        raise RuntimeError("Matching data is invalid; run score and fix its failures before approval.")
+    cover_path = application_dir / manifest["files"]["cover_letter"]
+    if not cover_path.is_file():
+        raise RuntimeError(f"Cover letter not found: {cover_path}; draft it first.")
+    letter = cover_path.read_text(encoding="utf-8").strip()
+    lowered = letter.casefold()
+    if (
+        len(letter) < COVER_MIN_CHARS
+        or not any(mark in lowered for mark in COVER_GREETINGS)
+        or not any(mark in lowered for mark in COVER_CLOSINGS)
+    ):
+        raise RuntimeError(
+            "Cover letter is incomplete; it needs a greeting, a closing, and "
+            f"at least {COVER_MIN_CHARS} characters of real content."
+        )
+    manifest["cover_status"] = "approved"
+    manifest["cover_approval"] = {
+        "approved_at": utc_now(),
+        "approved_by": args.approved_by,
+        "approved_text_sha256": sha256(cover_path),
+        "matching_sha256": matching_hashes(application_dir, manifest),
+    }
+    manifest["cover_qa"] = {key: "pending" for key in COVER_QA_KEYS} | {"binding": None}
+    write_json(manifest_path(application_dir), manifest)
+    print(f"COVER APPROVED {cover_path}")
+    return 0
+
+
+def command_cover_qa(args: argparse.Namespace) -> int:
+    application_dir = args.application_dir.resolve()
+    manifest = ensure_cover_track(load_manifest(application_dir))
+    if manifest.get("cover_status") not in {"approved", "cover-qa-passed"}:
+        raise RuntimeError("Approve the cover letter before recording QA.")
+    _, approved_hash = verify_cover_approval(application_dir, manifest)
+
+    changed = False
+    for key in COVER_QA_KEYS:
+        value = getattr(args, key)
+        if value:
+            manifest["cover_qa"][key] = value
+            changed = True
+    if not changed:
+        raise RuntimeError("Provide at least one QA result.")
+    paths = [path.resolve() for path in args.file]
+    if any(not path.is_file() for path in paths):
+        raise RuntimeError("Every --file value must be an existing file.")
+    manifest["cover_qa"]["binding"] = {
+        "approved_text_sha256": approved_hash,
+        "files": output_hashes(paths),
+        "recorded_at": utc_now(),
+    }
+    if all(manifest["cover_qa"].get(key) == "passed" for key in COVER_QA_KEYS):
+        manifest["cover_status"] = "cover-qa-passed"
+    write_json(manifest_path(application_dir), manifest)
+    print(json.dumps(manifest["cover_qa"], indent=2))
+    return 0
+
+
+def command_export(args: argparse.Namespace) -> int:
+    application_dir = args.application_dir.resolve()
+    manifest = load_manifest(application_dir)
+    entries: list[tuple[str, Path]] = [("manifest.json", manifest_path(application_dir))]
+    for name in (manifest.get("files") or {}).values():
+        path = application_dir / name
+        if path.is_file():
+            entries.append((name, path))
+    if len(entries) <= 1:
+        raise RuntimeError("Nothing to export: the workspace has no files.")
+    output = Path(args.output).resolve() if args.output else Path.cwd() / f"{application_dir.name}.zip"
+    if output.exists() and not args.force:
+        raise RuntimeError(f"Export blocked: {output} already exists; use --force.")
+    meta = {
+        "format": WORKSPACE_FORMAT,
+        "version": WORKSPACE_FORMAT_VERSION,
+        "exported_at": utc_now(),
+        "application": manifest.get("application"),
+    }
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("export.json", json.dumps(meta, ensure_ascii=False, indent=2))
+        for name, path in entries:
+            archive.write(path, arcname=name)
+    print(str(output))
+    return 0
+
+
+def command_import(args: argparse.Namespace) -> int:
+    archive_path = Path(args.archive).resolve()
+    if not archive_path.is_file():
+        raise RuntimeError(f"Archive not found: {archive_path}")
+    if not zipfile.is_zipfile(archive_path):
+        raise RuntimeError("Import blocked: not a zip archive.")
+    root = args.output_root.resolve()
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        with zipfile.ZipFile(archive_path) as archive:
+            for member in archive.namelist():
+                if not str((tmpdir / member).resolve()).startswith(str(tmpdir)):
+                    raise RuntimeError("Import blocked: unsafe paths in archive.")
+            archive.extractall(tmpdir)
+        meta_path = tmpdir / "export.json"
+        if not meta_path.is_file():
+            raise RuntimeError("Import blocked: not a ResumeProof workspace archive.")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if meta.get("format") != WORKSPACE_FORMAT:
+            raise RuntimeError("Import blocked: unknown workspace format.")
+        if meta.get("version") != WORKSPACE_FORMAT_VERSION:
+            raise RuntimeError(
+                f"Import blocked: unsupported workspace version {meta.get('version')}."
+            )
+        manifest_file = tmpdir / "manifest.json"
+        if not manifest_file.is_file():
+            raise RuntimeError("Import blocked: manifest.json missing from archive.")
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        missing = [
+            name
+            for name in (manifest.get("files") or {}).values()
+            if not (tmpdir / name).is_file()
+        ]
+        if missing:
+            raise RuntimeError(f"Import blocked: archive is missing files: {', '.join(missing)}.")
+        slug = args.slug or safe_name(archive_path.stem)
+        dest = root / slug
+        if dest.exists():
+            if not args.force:
+                raise RuntimeError(
+                    f"Import blocked: {dest} already exists; use --force or --slug."
+                )
+            shutil.rmtree(dest)
+        dest.mkdir(parents=True)
+        for item in tmpdir.iterdir():
+            if item.name == "export.json":
+                continue
+            shutil.copy2(item, dest / item.name)
+    _, _, _, errors = validate_matching(dest)
+    print(str(dest))
+    for error in errors:
+        print(f"WARNING: {error}")
+    return 0
+
+
+def _lower_first(value: str) -> str:
+    value = value.strip().rstrip(".")
+    return value[:1].lower() + value[1:] if value else value
+
+
+def command_interview(args: argparse.Namespace) -> int:
+    application_dir = args.application_dir.resolve()
+    manifest = load_manifest(application_dir)
+    jd, ledger, report, errors = validate_matching(application_dir)
+    if errors:
+        raise RuntimeError("Matching data is invalid; run score and fix its failures first.")
+    application = manifest.get("application") or {}
+    company = application.get("company") or "the company"
+    role = application.get("role") or "the role"
+
+    claim_map = {claim["id"]: claim for claim in ledger.get("claims", [])}
+
+    def weight(requirement: dict) -> int:
+        return requirement.get("importance", 1) * (
+            2 if requirement.get("type") == "must-have" else 1
+        )
+
+    req_map = {req["id"]: req for req in jd.get("requirements", [])}
+    matches = sorted(
+        report.get("matches", []),
+        key=lambda m: weight(req_map.get(m.get("requirement_id"), {})),
+        reverse=True,
+    )
+    lines = [
+        f"# Interview prep — {role} @ {company}",
+        "",
+        "_Generated from your evidence ledger. Every answer bullet traces to a claim ID; "
+        "do not invent beyond them._",
+        "",
+        "## Behavioral questions (answer from confirmed evidence)",
+        "",
+    ]
+    number = 0
+    for match in matches:
+        if match.get("status") != "supported":
+            continue
+        req = req_map.get(match.get("requirement_id"), {})
+        confirmed = [
+            claim_map[cid]
+            for cid in match.get("claim_ids", [])
+            if claim_map.get(cid, {}).get("status") == "confirmed"
+        ]
+        if not confirmed:
+            continue
+        number += 1
+        lines.append(f"### {number}. \"Tell me about a time you {_lower_first(req.get('statement', ''))}.\"")
+        lines.append(
+            f"- Requirement: `{req.get('id')}` ({req.get('type')}, importance {req.get('importance')})"
+        )
+        for claim in confirmed:
+            lines.append(
+                f"- Evidence `{claim['id']}`: {claim.get('statement')} _(source: {claim.get('source')})_"
+            )
+        lines.append("- Talk track: Situation → Task → Action → Result, using only the evidence above.")
+        lines.append("")
+    if number == 0:
+        lines.append("_No supported requirements yet — confirm more evidence first._")
+        lines.append("")
+
+    lines.append("## Likely questions on gaps (name the gap, bridge with transferables)")
+    lines.append("")
+    gap_number = 0
+    for match in matches:
+        req = req_map.get(match.get("requirement_id"), {})
+        if req.get("type") == "must-have" and match.get("status") == "unsupported":
+            gap_number += 1
+            lines.append(
+                f"### {gap_number}. \"How would you handle {_lower_first(req.get('statement', ''))} "
+                f"with limited direct experience?\""
+            )
+            lines.append(f"- Gap: `{req.get('id')}` (must-have, importance {req.get('importance')})")
+            lines.append(
+                "- Honest framing: name the gap in one sentence, then bridge with the closest "
+                "transferable evidence you actually have."
+            )
+            lines.append("")
+    if gap_number == 0:
+        lines.append("_No unsupported must-haves. Nice._")
+        lines.append("")
+
+    lines.append("## Clarifications to prepare (needs-confirmation claims)")
+    lines.append("")
+    pending = [
+        claim
+        for claim in ledger.get("claims", [])
+        if claim.get("status") == "needs-confirmation"
+    ]
+    if pending:
+        for claim in pending:
+            lines.append(f"- `{claim['id']}`: {claim.get('statement')} — nail this down before the interview.")
+    else:
+        lines.append("_Nothing pending._")
+    lines.append("")
+    lines.append("## Questions to ask them")
+    lines.append("")
+    lines.append("- What does success look like in the first 90 days for this role?")
+    lines.append("- What is the biggest challenge facing the team right now?")
+    lines.append("- How is performance measured for this position?")
+    lines.append("")
+    document = "\n".join(lines)
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(document, encoding="utf-8")
+        print(str(output.resolve()))
+    else:
+        print(document)
+    return 0
+
+
+def command_status(args: argparse.Namespace) -> int:
+    application_dir = args.application_dir.resolve()
+    manifest = ensure_cover_track(load_manifest(application_dir))
+    application = manifest.get("application") or {}
+    jd, ledger, report, errors = validate_matching(application_dir)
+    status = {
+        "slug": application_dir.name,
+        "company": application.get("company"),
+        "role": application.get("role"),
+        "language": application.get("language"),
+        "status": manifest.get("status"),
+        "cover_status": manifest.get("cover_status"),
+        "approval": bool((manifest.get("approval") or {}).get("approved_text_sha256")),
+        "cover_approval": bool((manifest.get("cover_approval") or {}).get("approved_text_sha256")),
+        "qa": {key: (manifest.get("qa") or {}).get(key) for key in QA_KEYS},
+        "cover_qa": {key: (manifest.get("cover_qa") or {}).get(key) for key in COVER_QA_KEYS},
+        "outcome": manifest.get("outcome"),
+        "matching_valid": not errors,
+        "matching_errors": errors,
+        "scores": None,
+    }
+    if not errors:
+        status["scores"] = calculate_scores(jd, ledger, report)
+    print(json.dumps(status, ensure_ascii=False, indent=2))
+    return 0
+
+
+def command_extract(args: argparse.Namespace) -> int:
+    path = Path(args.file).resolve()
+    if not path.is_file():
+        raise RuntimeError(f"File not found: {path}")
+    text, pages = extract_text(path)
+    if not text.strip():
+        raise RuntimeError("No extractable text found.")
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(text, encoding="utf-8")
+        print(str(output.resolve()))
+    else:
+        print(text)
+    return 0
+
+
+OUTCOME_STATUSES = ("applied", "rejected", "ghosted", "interview", "offer", "withdrawn")
+
+
+def command_outcome(args: argparse.Namespace) -> int:
+    application_dir = args.application_dir.resolve()
+    manifest = ensure_cover_track(load_manifest(application_dir))
+    entry = {
+        "status": args.status,
+        "date": args.date or utc_now()[:10],
+        "note": args.note or "",
+        "updated_at": utc_now(),
+    }
+    manifest["outcome"] = entry
+    history = manifest.setdefault("outcome_history", [])
+    history.append(entry)
+    write_json(manifest_path(application_dir), manifest)
+    print(json.dumps(entry, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -589,6 +1224,15 @@ def build_parser() -> argparse.ArgumentParser:
     qa.add_argument("--file", type=Path, action="append", required=True)
     for key in QA_KEYS:
         qa.add_argument(f"--{key}", choices=QA_STATES)
+    qa.add_argument(
+        "--from-inspect",
+        action="store_true",
+        help="Run the inspect checks on each file and record text/pagination from the result",
+    )
+    qa.add_argument("--required", action="append", default=[])
+    qa.add_argument("--forbid", action="append", default=[])
+    qa.add_argument("--max-pages", type=int, default=None)
+    qa.add_argument("--case-sensitive", action="store_true")
     qa.set_defaults(func=command_qa)
 
     deliver = commands.add_parser("deliver", help="Atomically deliver approved, QA-bound files")
@@ -597,6 +1241,72 @@ def build_parser() -> argparse.ArgumentParser:
     deliver.add_argument("--delivery-dir", type=Path, default=Path("Resume_Output/Delivery"))
     deliver.add_argument("--force", action="store_true")
     deliver.set_defaults(func=command_deliver)
+
+    keywords = commands.add_parser("keywords", help="Check JD keyword coverage in a resume file")
+    keywords.add_argument("application_dir", type=Path)
+    keywords.add_argument(
+        "--resume",
+        type=Path,
+        default=None,
+        help="Resume file to check; defaults to the approved text review",
+    )
+    keywords.add_argument("--min-length", type=int, default=3)
+    keywords.add_argument(
+        "--write", action="store_true", help="Persist coverage into match-report.json"
+    )
+    keywords.set_defaults(func=command_keywords)
+
+    compare = commands.add_parser("compare", help="Rank multiple applications by fit signals")
+    compare.add_argument("application_dirs", nargs="+")
+    compare.add_argument("--format", choices=("table", "json"), default="table")
+    compare.add_argument("--output", type=Path, default=None)
+    compare.set_defaults(func=command_compare)
+
+    cover_approve = commands.add_parser("cover-approve", help="Hash-lock the approved cover letter")
+    cover_approve.add_argument("application_dir", type=Path)
+    cover_approve.add_argument("--approved-by", default="user-confirmed")
+    cover_approve.set_defaults(func=command_cover_approve)
+
+    cover_qa = commands.add_parser("cover-qa", help="Bind cover letter QA to approved text and files")
+    cover_qa.add_argument("application_dir", type=Path)
+    cover_qa.add_argument("--file", type=Path, action="append", required=True)
+    for key in COVER_QA_KEYS:
+        cover_qa.add_argument(f"--{key}", choices=QA_STATES)
+    cover_qa.set_defaults(func=command_cover_qa)
+
+    export = commands.add_parser("export", help="Pack a workspace into a portable zip archive")
+    export.add_argument("application_dir", type=Path)
+    export.add_argument("--output", type=Path, default=None)
+    export.add_argument("--force", action="store_true")
+    export.set_defaults(func=command_export)
+
+    import_cmd = commands.add_parser("import", help="Restore a workspace from an exported archive")
+    import_cmd.add_argument("archive", type=Path)
+    import_cmd.add_argument("--output-root", type=Path, default=Path("Resume_Output/Applications"))
+    import_cmd.add_argument("--slug")
+    import_cmd.add_argument("--force", action="store_true")
+    import_cmd.set_defaults(func=command_import)
+
+    interview = commands.add_parser("interview", help="Generate interview prep from the evidence ledger")
+    interview.add_argument("application_dir", type=Path)
+    interview.add_argument("--output", type=Path, default=None)
+    interview.set_defaults(func=command_interview)
+
+    status = commands.add_parser("status", help="Show the full state of an application workspace")
+    status.add_argument("application_dir", type=Path)
+    status.set_defaults(func=command_status)
+
+    extract = commands.add_parser("extract", help="Extract text from a resume file (PDF/HTML/TXT)")
+    extract.add_argument("file", type=Path)
+    extract.add_argument("--output", type=Path, default=None)
+    extract.set_defaults(func=command_extract)
+
+    outcome = commands.add_parser("outcome", help="Record what happened after delivery")
+    outcome.add_argument("application_dir", type=Path)
+    outcome.add_argument("--status", choices=OUTCOME_STATUSES, required=True)
+    outcome.add_argument("--note", default="")
+    outcome.add_argument("--date", default=None, help="YYYY-MM-DD, defaults to today")
+    outcome.set_defaults(func=command_outcome)
 
     safety = commands.add_parser("safety", help="Scan public files for obvious sensitive data")
     safety.add_argument("root", type=Path, nargs="?", default=ROOT)

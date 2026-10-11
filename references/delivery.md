@@ -23,6 +23,20 @@ Run \`inspect\` for extractable text, required or forbidden terms, and page coun
 
 The \`qa\` command binds passing QA to both the approved-text hash and the supplied output files. Regenerating a file makes previous QA stale.
 
+## Cover letters
+
+The cover letter track mirrors the resume track with its own state:
+
+- \`cover-approve\` hash-locks the approved \`cover-letter.md\`. It requires
+  valid matching data and a complete letter (greeting, closing, minimum length).
+- \`cover-qa\` records \`text\` and \`facts\` checks and binds the output
+  files to the approved letter hash.
+- \`deliver\` accepts files bound to either track's QA. A file with no binding,
+  a stale binding, or a changed file blocks delivery.
+
+\`new\` creates a \`cover-letter.md\` placeholder. Workspaces created before
+this track existed get its manifest keys filled in automatically.
+
 ## Delivery
 
 Use \`deliver\` only after all checks pass. It performs a full preflight before copying any file, so a collision or missing file cannot leave a partial delivery. Existing files require explicit \`--force\`.

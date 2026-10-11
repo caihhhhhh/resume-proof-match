@@ -35,6 +35,13 @@ Every claim needs:
 
 Do not infer support from keyword overlap alone. A tools list can help locate evidence, but it does not prove depth, ownership, duration, or results.
 
+Each match may also carry two optional fields:
+
+- `confidence`: `high`, `medium`, or `low` — the agent's judgment of how directly
+  the linked evidence supports the requirement. Validated by the CLI when present.
+- `explanation`: one line stating why the linked evidence does or does not
+  support the requirement.
+
 ## Deterministic scoring
 
 Only positive requirements are included in role-fit scoring. Weight is:
@@ -59,6 +66,43 @@ Bands:
 - Weak: below 60 or any hard conflict.
 
 These values are decision aids, not recruiter behavior predictions or ATS pass probabilities.
+
+## Keyword coverage
+
+The CLI `keywords` command checks JD keyword coverage in a resume file without
+pretending to predict ATS behavior:
+
+- English: alphanumeric tokens from requirement statements and source text,
+  minus stopwords, matched with word boundaries (no stemming).
+- Chinese: longest common phrases between each JD run and the resume
+  (greedy longest-first, no word segmenter), plus the JD phrases the resume
+  does not cover.
+- Output: present/missing lists, per-requirement breakdown, and a coverage
+  ratio, always labeled "keyword coverage only; not an ATS pass probability."
+
+Use it to spot missing terminology before tailoring. A missing keyword is a
+lead for evidence, never proof of a missing qualification.
+
+## Comparing applications
+
+The CLI `compare` command ranks two or more application workspaces by
+recommendation first, then role fit, then evidence coverage. Scores are
+recomputed deterministically from the workspace files, so the ranking never
+depends on stale stored scores. Workspaces that fail validation are shown
+with their errors rather than ranked.
+
+## Document readiness rubric
+
+Score each dimension 0–100 and write one line of justification. The rubric
+reduces variance; it does not eliminate judgment — scores stay on the agent
+side, never in a function.
+
+| Score | structure | clarity | keyword_expression | extractability |
+|---|---|---|---|---|
+| 90–100 | Conventional sections in logical order, consistent formatting | Every bullet starts with a strong verb and a quantified outcome | JD core terms appear naturally in context | Clean text layer; `inspect` passes |
+| 70–89 | Sections present, minor order/format inconsistencies | Mostly clear, a few vague bullets | Most terms present, some feel forced | Extractable with minor artifacts |
+| 40–69 | Missing key sections or confusing order | Frequent filler ("responsible for") or missing outcomes | Key terms missing — run `keywords` | Partial extraction (tables/images) |
+| 0–39 | No recognizable structure | Unreadable or empty | No overlap with JD terminology | Scanned image, no text layer |
 
 ## Recommendations
 
