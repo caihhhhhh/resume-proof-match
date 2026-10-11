@@ -56,6 +56,15 @@ This repository is the AI-agent Skill and deterministic workflow. The interactiv
 - **Hash-bound QA and delivery** — changed text or regenerated files invalidate stale checks.
 - **Portable and lightweight** — Python standard library only; no accounts, database, or vector store.
 
+## Capabilities
+
+- **Keyword coverage** — which JD terms your resume hits and which are missing. Facts only, no made-up pass probability.
+- **Multi-JD comparison** — rank several applications side by side and decide where to apply first.
+- **Cover letter track** — the same approval → QA → delivery pipeline for cover letters, sharing one evidence ledger with the resume.
+- **Workspace export/import** — pack the whole workspace into a zip and continue on another machine with approvals intact.
+- **Interview prep** — Q&A generated from the evidence ledger; every answer traces back to a claim ID.
+- **Outcome tracking** — record what happened after delivery: applied, interview, offer, rejected.
+
 ## Install
 
 \`\`\`bash
